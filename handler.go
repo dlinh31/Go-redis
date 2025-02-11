@@ -47,7 +47,7 @@ func get(args []Value) Value {
 	SETsMu.Lock()
 	value, ok := SETs[key]
 	if !ok {
-		return Value{typ: "null"}
+		return Value{typ: "null", str: "NOT FOUND"}
 	}
 	return Value{typ: "bulk", bulk: value}
 }

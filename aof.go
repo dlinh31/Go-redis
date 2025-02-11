@@ -48,8 +48,7 @@ func (aof *Aof) Write(value Value) error {
 	if err != nil {
 		return err
 	}
-
-	return nil
+	return aof.file.Sync()
 }
 
 func (aof *Aof) Read(callback func(value Value)) error {

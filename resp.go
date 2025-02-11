@@ -35,7 +35,8 @@ func (r *Resp) readLine() (line []byte, n int, err error) {
 	for { 
 		b, err := r.reader.ReadByte()
 		if err != nil {
-			return nil, 0, nil
+			fmt.Println(err)
+			return nil, n, err 
 		}
 		n += 1
 		line = append(line, b)
@@ -98,14 +99,16 @@ func (r *Resp) readBulk() (Value, error) {
 	v := Value{}
 	v.typ = "bulk"
 	len, _, err := r.readInteger()
-	if err != nil{
+	if err != nil {
 		return v, err
 	}
 	bulk := make([]byte, len)
-	r.reader.Read(bulk)
+	_, err = io.ReadFull(r.reader, bulk) // Use ReadFull to read exactly 'len' bytes
+	if err != nil {
+		return v, err
+	}
 	v.bulk = string(bulk)
-	r.readLine() // read the rest CRLF
-
+	r.readLine() // Read the trailing CRLF
 	return v, nil
 }
 
@@ -190,4 +193,6 @@ func (w *Writer) Write(v Value) error {
 
 	return nil
 }
+
+
 

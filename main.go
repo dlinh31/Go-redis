@@ -31,46 +31,50 @@ func main() {
 		handler(args)
 	})
 
-	conn, err := listener.Accept()
-	if err != nil {
-		fmt.Println(err)
-		return
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		go handleConnection(conn, aof) // Handle each connection in a goroutine
 	}
+
+}
+
+func handleConnection(conn net.Conn, aof *Aof) {
 	defer conn.Close()
 
 	for {
 		resp := NewResp(conn)
 		value, err := resp.Read()
-		if err != nil{
+		if err != nil {
 			fmt.Println(err)
 			return
 		}
-		fmt.Println(value)
-		if value.typ != "array" {
+
+		if value.typ != "array" || len(value.array) == 0 {
 			fmt.Println("Invalid request, expected array")
-			continue
-		}
-		if len(value.array) == 0 {
-			fmt.Println("Invalid request, expected array length > 0")
 			continue
 		}
 
 		writer := NewWriter(conn)
 		command := strings.ToUpper(value.array[0].bulk)
 		args := value.array[1:]
+
 		handler, ok := Handlers[command]
 		if !ok {
-			fmt.Println("Invalid command: ", command)
 			writer.Write(Value{typ: "string", str: ""})
 			continue
 		}
-		if command == "SET" || command == "HSET" || command == "DEL" {
-			aof.Write(value)
-		}
 
 		result := handler(args)
-		writer.Write(result)
-	}
 
-	
+		if (command == "SET" || command == "HSET" || command == "DEL") && result.typ != "error" {
+			aof.Write(value)
+		}
+		
+		writer.Write(result)
+		
+	}
 }
