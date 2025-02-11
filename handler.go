@@ -40,16 +40,17 @@ func set(args []Value) Value {
 }
 
 func get(args []Value) Value {
-	if len(args) != 1 {
-		return Value{typ: "error", str: "ERR wrong number of arguments for 'get' command"}
-	}
-	key := args[0].bulk
-	SETsMu.Lock()
-	value, ok := SETs[key]
-	if !ok {
-		return Value{typ: "null", str: "NOT FOUND"}
-	}
-	return Value{typ: "bulk", bulk: value}
+    if len(args) != 1 {
+        return Value{typ: "error", str: "ERR wrong number of arguments for 'get' command"}
+    }
+    key := args[0].bulk
+    SETsMu.RLock()
+    defer SETsMu.RUnlock()
+    value, ok := SETs[key]
+    if !ok {
+        return Value{typ: "null"}
+    }
+    return Value{typ: "bulk", bulk: value}
 }
 
 var HSETs = map[string]map[string]string{} // map with key: string, and value: map of string-string
@@ -111,29 +112,34 @@ func hgetall(args []Value) Value{
 	return Value{typ: "array", array: result}
 }
 
-func del(args []Value) Value{
-	if len(args) != 1 {
-		return Value{typ: "error", str: "ERR wrong number of arguments for 'del' command"}
-	}
-	key := args[0].bulk
-	_, existsInSETs := SETs[key]
-	if existsInSETs{
-		SETsMu.Lock()
-		delete(SETs, key)
-		SETsMu.Unlock()
-	}
-	HSETsMu.Lock()
-	_, existsInHSETs := HSETs[key]
-	if existsInHSETs{
-		delete(HSETs, key)
-	}
-	HSETsMu.Unlock()
-	if existsInSETs || existsInHSETs {
-		return Value{typ: "string", str: "OK"}
-	}
+func del(args []Value) Value {
+    if len(args) != 1 {
+        return Value{typ: "error", str: "ERR wrong number of arguments for 'del' command"}
+    }
+    key := args[0].bulk
 
-	return Value{typ: "string", str: "NOT FOUND"}
+    existsInSETs := false
+    SETsMu.RLock()
+    _, existsInSETs = SETs[key]
+    SETsMu.RUnlock()
+    if existsInSETs {
+        SETsMu.Lock()
+        delete(SETs, key)
+        SETsMu.Unlock()
+    }
 
+    existsInHSETs := false
+    HSETsMu.Lock()
+    _, existsInHSETs = HSETs[key]
+    if existsInHSETs {
+        delete(HSETs, key)
+    }
+    HSETsMu.Unlock()
+
+    if existsInSETs || existsInHSETs {
+        return Value{typ: "string", str: "OK"}
+    }
+    return Value{typ: "string", str: "NOT FOUND"}
 }
 
 func command(args []Value) Value {
