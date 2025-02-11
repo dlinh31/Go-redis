@@ -64,7 +64,7 @@ func main() {
 			writer.Write(Value{typ: "string", str: ""})
 			continue
 		}
-		if command == "SET" || command == "HSET" {
+		if command == "SET" || command == "HSET" || command == "DEL" {
 			aof.Write(value)
 		}
 

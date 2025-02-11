@@ -1,8 +1,9 @@
 package main
 
-import "sync"
+import (
+	"sync"
+)
 
-// var Handlers = make(map[string]func([]Value) Value)
 
 func ping(args []Value) Value {
 	if len(args) == 0 {
@@ -11,13 +12,16 @@ func ping(args []Value) Value {
 	return Value{typ: "string", str: args[0].bulk}
 }
 
-var Handlers = map[string]func([]Value) Value{
+var Handlers = map[string]func([]Value) Value{ // associate a command with handler funciton
 	"PING": ping,
 	"GET": get,
 	"SET": set,
 	"HSET": hset,
 	"HGET": hget,
 	"HGETALL": hgetall,
+	"DEL": del,
+	"COMMAND": command,
+	
 }
 
 var SETs = map[string]string{}
@@ -105,4 +109,33 @@ func hgetall(args []Value) Value{
 	}
 
 	return Value{typ: "array", array: result}
+}
+
+func del(args []Value) Value{
+	if len(args) != 1 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'del' command"}
+	}
+	key := args[0].bulk
+	_, existsInSETs := SETs[key]
+	if existsInSETs{
+		SETsMu.Lock()
+		delete(SETs, key)
+		SETsMu.Unlock()
+	}
+	HSETsMu.Lock()
+	_, existsInHSETs := HSETs[key]
+	if existsInHSETs{
+		delete(HSETs, key)
+	}
+	HSETsMu.Unlock()
+	if existsInSETs || existsInHSETs {
+		return Value{typ: "string", str: "OK"}
+	}
+
+	return Value{typ: "string", str: "NOT FOUND"}
+
+}
+
+func command(args []Value) Value {
+	return Value{typ: "array", array: []Value{}} 
 }
