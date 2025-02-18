@@ -49,10 +49,13 @@ func handleConnection(conn net.Conn, aof *Aof) {
 		resp := NewResp(conn)
 		value, err := resp.Read()
 		if err != nil {
-			fmt.Println(err)
+			if err.Error() == "EOF" {
+				fmt.Println("Client disconnected:", conn.RemoteAddr())
+			} else {
+				fmt.Println("Error reading request:", err)
+			}
 			return
 		}
-
 		if value.typ != "array" || len(value.array) == 0 {
 			fmt.Println("Invalid request, expected array")
 			continue
@@ -62,6 +65,10 @@ func handleConnection(conn net.Conn, aof *Aof) {
 		command := strings.ToUpper(value.array[0].bulk)
 		args := value.array[1:]
 
+		if command == "SUBSCRIBE" {
+			go handleSubscription(conn, args)
+			continue
+		}
 		handler, ok := Handlers[command]
 		if !ok {
 			writer.Write(Value{typ: "string", str: ""})
@@ -78,3 +85,5 @@ func handleConnection(conn net.Conn, aof *Aof) {
 		
 	}
 }
+
+

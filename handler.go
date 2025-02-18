@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"net"
 	"sync"
 )
 
@@ -21,6 +23,7 @@ var Handlers = map[string]func([]Value) Value{ // associate a command with handl
 	"HGETALL": hgetall,
 	"DEL": del,
 	"COMMAND": command,
+	"PUBLISH": publish,
 	
 }
 
@@ -145,3 +148,39 @@ func del(args []Value) Value {
 func command(args []Value) Value {
 	return Value{typ: "array", array: []Value{}} 
 }
+
+
+var pubSubManager = NewPubSubManager() // Create Pub/Sub manager
+
+
+func publish(args []Value) Value {
+	if len(args) != 2 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'publish' command"}
+	}
+	channel := args[0].bulk
+	message := args[1].bulk
+	pubSubManager.Publish(channel, message)
+	return Value{typ: "string", str: "Message published to " + channel}
+}
+
+
+func handleSubscription(conn net.Conn, args []Value) {
+	if len(args) == 0 {
+		NewWriter(conn).Write(Value{typ: "error", str: "ERR wrong number of arguments for 'subscribe' command"})
+		return
+	}
+
+	quitChan := make(chan struct{}) // Quit channel for graceful disconnects
+
+	// Subscribe the client to multiple channels
+	for _, arg := range args {
+		channel := arg.bulk
+		pubSubManager.Subscribe(conn, channel, quitChan)
+	}
+
+	// Keep connection alive and listen for quit signal
+	<-quitChan
+	fmt.Println("Client disconnected:", conn.RemoteAddr())
+	conn.Close() // ✅ Close connection when subscriber quits
+}
+
