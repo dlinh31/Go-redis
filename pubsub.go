@@ -16,7 +16,7 @@ type PubSubManager struct {
 func NewPubSubManager() *PubSubManager {
 	return &PubSubManager{
 		subscribers: make(map[string]map[net.Conn]chan string),
-		quitChannels: make(map[net.Conn]chan struct{}), // ✅ Track quit channels
+		quitChannels: make(map[net.Conn]chan struct{}), // Track quit channels
 	}
 }
 
@@ -109,7 +109,7 @@ func listenForMessages(
 	for {
 		select {
 		case msg := <-msgChan:
-			// ✅ Build the 3-element array: ["message", channel, msg]
+			// Build the 3-element array: ["message", channel, msg]
 			pubsubMsg := Value{
 				typ: "array",
 				array: []Value{
