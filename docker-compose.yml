@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  go-redis:
+    build: .
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data:/data
+    restart: always
