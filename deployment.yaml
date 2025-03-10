@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-redis
+  template:
+    metadata:
+      labels:
+        app: go-redis
+    spec:
+      containers:
+      - name: go-redis
+        image: 730335404957.dkr.ecr.us-east-1.amazonaws.com/go-redis:latest
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            memory: "16Mi"  
+            cpu: "25m"     
+          limits:
+            memory: "32Mi" 
+            cpu: "50m"    
+        volumeMounts:
+        - name: aof-storage
+          mountPath: /data
+      volumes:
+      - name: aof-storage
+        emptyDir: {}  # Stores AOF in memory (not persistent)
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-redis
+spec:
+  selector:
+    app: go-redis
+  ports:
+    - protocol: TCP
+      port: 6379
+      targetPort: 6379
+  type: LoadBalancer  # Exposes Go-Redis externally

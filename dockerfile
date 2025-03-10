@@ -10,8 +10,7 @@ RUN go mod tidy || true  # Ignore errors if go.sum isn't needed
 COPY . .  
 
 # ✅ Build the entire module (not just main.go)
-RUN go build -o go-redis .  
-
+RUN GOOS=linux GOARCH=amd64 go build -o go-redis .
 # Runtime Stage (Final Lightweight Image)
 FROM alpine:latest
 WORKDIR /app
