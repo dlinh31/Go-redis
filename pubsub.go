@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 )
 
 type PubSubManager struct {
 	mu          sync.RWMutex
 	subscribers map[string]map[net.Conn]chan string
-	quitChannels map[net.Conn]chan struct{} // ✅ Quit channels
+	quitChannels map[net.Conn]chan struct{} // Quit channels
 }
 
 
@@ -35,14 +36,22 @@ func (ps *PubSubManager) Subscribe(conn net.Conn, channel string, quitChan chan 
 	// Start listening for messages
 	go listenForMessages(ps, conn, channel, messageChan, quitChan)
 
+	// Count how many channels this connection is subscribed to (computed, not stored)
+	count := 0
+	for _, subs := range ps.subscribers {
+		if _, ok := subs[conn]; ok {
+			count++
+		}
+	}
+
 	// Send a "subscribe" message back to client
 	writer := NewWriter(conn)
 	subMsg := Value{
 		typ: "array",
 		array: []Value{
-			{typ: "bulk", bulk: "subscribe"},   // Redis: "subscribe"
-			{typ: "bulk", bulk: channel},       // Channel name
-			{typ: "bulk", bulk: "1"},          // Hardcode "1" or count total channels
+			{typ: "bulk", bulk: "subscribe"},              // Redis: "subscribe"
+			{typ: "bulk", bulk: channel},                // Channel name
+			{typ: "bulk", bulk: strconv.Itoa(count)},    // Total channels this client is subscribed to
 		},
 	}
 	_ = writer.Write(subMsg) // Ignore error for brevity
