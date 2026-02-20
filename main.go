@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -30,6 +31,20 @@ func main() {
 		}
 		handler(args)
 	})
+
+	// Start background expiration after AOF replay
+	config := DefaultExpirationConfig()
+	expirationStats, stopExpiration := StartActiveExpiration(config, aof)
+	defer stopExpiration() // Ensure graceful shutdown
+
+	// Log stats on shutdown for observability
+	defer func() {
+		if expirationStats != nil {
+			cycles, scanned, expired := expirationStats.Snapshot()
+			fmt.Printf("Expiration stats - Cycles: %d, Scanned: %d, Expired: %d\n",
+				cycles, scanned, expired)
+		}
+	}()
 
 	for {
 		conn, err := listener.Accept()
@@ -79,6 +94,24 @@ func handleConnection(conn net.Conn, aof *Aof) {
 
 		if (command == "SET" || command == "HSET" || command == "DEL") && result.typ != "error" {
 			aof.Write(value)
+		}
+
+		if command == "EXPIRE" && result.typ == "integer" && result.num == 1 {
+			key := args[0].bulk
+			SETsMu.RLock()
+			entry, ok := SETs[key]
+			SETsMu.RUnlock()
+			if ok && entry.ExpiresAt != nil {
+				expireatCmd := Value{
+					typ: "array",
+					array: []Value{
+						{typ: "bulk", bulk: "EXPIREAT"},
+						{typ: "bulk", bulk: key},
+						{typ: "bulk", bulk: strconv.FormatInt(entry.ExpiresAt.Unix(), 10)},
+					},
+				}
+				aof.Write(expireatCmd)
+			}
 		}
 		
 		writer.Write(result)

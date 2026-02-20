@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
+	"time"
 )
 
 
@@ -15,19 +17,41 @@ func ping(args []Value) Value {
 }
 
 var Handlers = map[string]func([]Value) Value{ // associate a command with handler funciton
-	"PING": ping,
-	"GET": get,
-	"SET": set,
-	"HSET": hset,
-	"HGET": hget,
-	"HGETALL": hgetall,
-	"DEL": del,
-	"COMMAND": command,
-	"PUBLISH": publish,
-	
+	"PING":     ping,
+	"GET":      get,
+	"SET":      set,
+	"HSET":     hset,
+	"HGET":     hget,
+	"HGETALL":  hgetall,
+	"DEL":      del,
+	"COMMAND":  command,
+	"PUBLISH":  publish,
+	"EXPIRE":   expire,
+	"TTL":      ttl,
+	"EXPIREAT": expireat,
 }
 
-var SETs = map[string]string{}
+// StringEntry represents a string value stored via SET, with optional
+// expiration metadata. ExpiresAt is used for passive expiration checks
+// in handlers like GET and DEL; keys with an ExpiresAt in the past are
+// treated as non-existent.
+type StringEntry struct {
+	Value     string
+	ExpiresAt *time.Time // nil means no expiration
+}
+
+// isExpired reports whether the given StringEntry is logically expired
+// based on its ExpiresAt timestamp. A nil ExpiresAt means the entry
+// does not have an expiration and is therefore not expired.
+func isExpired(entry StringEntry) bool {
+	if entry.ExpiresAt == nil {
+		return false
+	}
+	now := time.Now()
+	return now.After(*entry.ExpiresAt)
+}
+
+var SETs = map[string]StringEntry{}
 var SETsMu = sync.RWMutex{}
 
 func set(args []Value) Value {
@@ -37,23 +61,40 @@ func set(args []Value) Value {
 	key := args[0].bulk
 	value := args[1].bulk
 	SETsMu.Lock()
-	SETs[key] = value
+	SETs[key] = StringEntry{
+		Value:     value,
+		ExpiresAt: nil, // TTL will be set in future steps
+	}
 	SETsMu.Unlock()
 	return Value{typ: "string", str: "OK"}
 }
 
 func get(args []Value) Value {
-    if len(args) != 1 {
-        return Value{typ: "error", str: "ERR wrong number of arguments for 'get' command"}
-    }
-    key := args[0].bulk
-    SETsMu.RLock()
-    defer SETsMu.RUnlock()
-    value, ok := SETs[key]
-    if !ok {
-        return Value{typ: "null"}
-    }
-    return Value{typ: "bulk", bulk: value}
+	if len(args) != 1 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'get' command"}
+	}
+	key := args[0].bulk
+
+	// First perform a read-only lookup to see if the key exists.
+	SETsMu.RLock()
+	entry, ok := SETs[key]
+	SETsMu.RUnlock()
+	if !ok {
+		return Value{typ: "null"}
+	}
+
+	// Passive expiration: if the key is expired, delete it and treat it as
+	// non-existent for this GET, mirroring Redis semantics.
+	if isExpired(entry) {
+		SETsMu.Lock()
+		if entry2, ok2 := SETs[key]; ok2 && isExpired(entry2) {
+			delete(SETs, key)
+		}
+		SETsMu.Unlock()
+		return Value{typ: "null"}
+	}
+
+	return Value{typ: "bulk", bulk: entry.Value}
 }
 
 var HSETs = map[string]map[string]string{} // map with key: string, and value: map of string-string
@@ -116,37 +157,141 @@ func hgetall(args []Value) Value{
 }
 
 func del(args []Value) Value {
-    if len(args) != 1 {
-        return Value{typ: "error", str: "ERR wrong number of arguments for 'del' command"}
-    }
-    key := args[0].bulk
+	if len(args) != 1 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'del' command"}
+	}
+	key := args[0].bulk
 
-    existsInSETs := false
-    SETsMu.RLock()
-    _, existsInSETs = SETs[key]
-    SETsMu.RUnlock()
-    if existsInSETs {
-        SETsMu.Lock()
-        delete(SETs, key)
-        SETsMu.Unlock()
-    }
+	// String-key deletion with passive expiration semantics: expired keys
+	// are treated as non-existent for this command, though we still clean
+	// them up from SETs. Use a single write lock since DEL is inherently
+	// a write operation.
+	stringDeleted := false
 
-    existsInHSETs := false
-    HSETsMu.Lock()
-    _, existsInHSETs = HSETs[key]
-    if existsInHSETs {
-        delete(HSETs, key)
-    }
-    HSETsMu.Unlock()
+	SETsMu.Lock()
+	if entry, exists := SETs[key]; exists {
+		if !isExpired(entry) {
+			// Non-expired key: delete and count as successful deletion
+			delete(SETs, key)
+			stringDeleted = true
+		} else {
+			// Expired key: clean up but don't count as deletion
+			delete(SETs, key)
+		}
+	}
+	SETsMu.Unlock()
 
-    if existsInSETs || existsInHSETs {
-        return Value{typ: "string", str: "OK"}
-    }
-    return Value{typ: "string", str: "NOT FOUND"}
+	// Hash-key deletion behavior is unchanged.
+	existsInHSETs := false
+	HSETsMu.Lock()
+	if _, existsInHSETs = HSETs[key]; existsInHSETs {
+		delete(HSETs, key)
+	}
+	HSETsMu.Unlock()
+
+	if stringDeleted || existsInHSETs {
+		return Value{typ: "string", str: "OK"}
+	}
+	return Value{typ: "string", str: "NOT FOUND"}
+}
+
+// expire sets a timeout on key. After the timeout, the key is automatically
+// deleted. Returns 1 if timeout was set, 0 if key does not exist (or is
+// already expired, in which case it is lazily deleted).
+func expire(args []Value) Value {
+	if len(args) != 2 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'expire' command"}
+	}
+	key := args[0].bulk
+	seconds, err := strconv.ParseInt(args[1].bulk, 10, 64)
+	if err != nil {
+		return Value{typ: "error", str: "ERR value is not an integer or out of range"}
+	}
+
+	SETsMu.Lock()
+	defer SETsMu.Unlock()
+
+	entry, ok := SETs[key]
+	if !ok {
+		return Value{typ: "integer", num: 0}
+	}
+	if isExpired(entry) {
+		delete(SETs, key)
+		return Value{typ: "integer", num: 0}
+	}
+
+	t := time.Now().Add(time.Duration(seconds) * time.Second)
+	SETs[key] = StringEntry{Value: entry.Value, ExpiresAt: &t}
+	return Value{typ: "integer", num: 1}
+}
+
+// ttl returns the remaining time-to-live of key in seconds.
+// Returns -2 if the key does not exist (or is expired), -1 if no expiry is
+// set, or the remaining whole seconds otherwise.
+func ttl(args []Value) Value {
+	if len(args) != 1 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'ttl' command"}
+	}
+	key := args[0].bulk
+
+	SETsMu.RLock()
+	entry, ok := SETs[key]
+	SETsMu.RUnlock()
+
+	if !ok {
+		return Value{typ: "integer", num: -2}
+	}
+
+	if isExpired(entry) {
+		// Lock upgrade: release read lock, acquire write lock, re-check before deleting.
+		SETsMu.Lock()
+		if e2, ok2 := SETs[key]; ok2 && isExpired(e2) {
+			delete(SETs, key)
+		}
+		SETsMu.Unlock()
+		return Value{typ: "integer", num: -2}
+	}
+
+	if entry.ExpiresAt == nil {
+		return Value{typ: "integer", num: -1}
+	}
+
+	remaining := int(time.Until(*entry.ExpiresAt).Seconds())
+	return Value{typ: "integer", num: remaining}
+}
+
+// expireat sets the expiration of key to an absolute Unix timestamp (seconds).
+// It is used primarily during AOF replay to restore exact expiry deadlines.
+// Returns 1 if set, 0 if the key does not exist or is already expired.
+func expireat(args []Value) Value {
+	if len(args) != 2 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'expireat' command"}
+	}
+	key := args[0].bulk
+	unixSec, err := strconv.ParseInt(args[1].bulk, 10, 64)
+	if err != nil {
+		return Value{typ: "error", str: "ERR value is not an integer or out of range"}
+	}
+
+	SETsMu.Lock()
+	defer SETsMu.Unlock()
+
+	entry, ok := SETs[key]
+	if !ok {
+		return Value{typ: "integer", num: 0}
+	}
+	if isExpired(entry) {
+		delete(SETs, key)
+		return Value{typ: "integer", num: 0}
+	}
+
+	t := time.Unix(unixSec, 0)
+	SETs[key] = StringEntry{Value: entry.Value, ExpiresAt: &t}
+	return Value{typ: "integer", num: 1}
 }
 
 func command(args []Value) Value {
-	return Value{typ: "array", array: []Value{}} 
+	return Value{typ: "array", array: []Value{}}
 }
 
 
@@ -181,6 +326,6 @@ func handleSubscription(conn net.Conn, args []Value) {
 	// Keep connection alive and listen for quit signal
 	<-quitChan
 	fmt.Println("Client disconnected:", conn.RemoteAddr())
-	conn.Close() // ✅ Close connection when subscriber quits
+	conn.Close() // Close connection when subscriber quits
 }
 

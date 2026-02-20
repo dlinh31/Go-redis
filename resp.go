@@ -16,10 +16,10 @@ const (
 )
 
 type Value struct {
-	typ string
-	str string
-	// num int
-	bulk string
+	typ   string
+	str   string
+	num   int
+	bulk  string
 	array []Value
 }
 
@@ -124,9 +124,19 @@ func (v Value) Marshal() []byte {
 		return v.marshallNull()
 	case "error":
 		return v.marshallError()
+	case "integer":
+		return v.marshalInteger()
 	default:
 		return []byte{}
 	}
+}
+
+func (v Value) marshalInteger() []byte {
+	var bytes []byte
+	bytes = append(bytes, INTEGER)
+	bytes = append(bytes, strconv.Itoa(v.num)...)
+	bytes = append(bytes, '\r', '\n')
+	return bytes
 }
 
 
