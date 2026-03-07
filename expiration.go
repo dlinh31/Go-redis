@@ -19,9 +19,9 @@ func DefaultExpirationConfig() ExpirationConfig {
 	return ExpirationConfig{
 		Enabled:           true,
 		Interval:          100 * time.Millisecond, // 10 Hz like Redis
-		SampleSize:        20,                      // Redis default
-		AdaptiveThreshold: 0.10,                    // Stop if <10% expired
-		MaxIterations:     10,                      // Prevent infinite loops
+		SampleSize:        20,                     // Redis default
+		AdaptiveThreshold: 0.10,                   // Stop if <10% expired
+		MaxIterations:     10,                     // Prevent infinite loops
 	}
 }
 

@@ -21,7 +21,7 @@ func main() {
 		return
 	}
 	defer aof.Close()
-	aof.Read(func (value Value) {
+	aof.Read(func(value Value) {
 		command := strings.ToUpper(value.array[0].bulk)
 		args := value.array[1:]
 		handler, ok := Handlers[command]
@@ -113,10 +113,8 @@ func handleConnection(conn net.Conn, aof *Aof) {
 				aof.Write(expireatCmd)
 			}
 		}
-		
+
 		writer.Write(result)
-		
+
 	}
 }
-
-

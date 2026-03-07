@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-
 func ping(args []Value) Value {
 	if len(args) == 0 {
 		return Value{typ: "string", str: "PONG"}
@@ -116,7 +115,7 @@ func hset(args []Value) Value {
 	return Value{typ: "string", str: "OK"}
 }
 
-func hget(args []Value) Value{
+func hget(args []Value) Value {
 	if len(args) != 2 {
 		return Value{typ: "error", str: "ERR wrong number of arguments for 'hget' command"}
 	}
@@ -133,7 +132,7 @@ func hget(args []Value) Value{
 	return Value{typ: "bulk", bulk: value}
 }
 
-func hgetall(args []Value) Value{
+func hgetall(args []Value) Value {
 	if len(args) != 1 {
 		return Value{typ: "error", str: "ERR wrong number of arguments for 'hgetall' command"}
 	}
@@ -294,9 +293,7 @@ func command(args []Value) Value {
 	return Value{typ: "array", array: []Value{}}
 }
 
-
 var pubSubManager = NewPubSubManager() // Create Pub/Sub manager
-
 
 func publish(args []Value) Value {
 	if len(args) != 2 {
@@ -307,7 +304,6 @@ func publish(args []Value) Value {
 	pubSubManager.Publish(channel, message)
 	return Value{typ: "string", str: "Message published to " + channel}
 }
-
 
 func handleSubscription(conn net.Conn, args []Value) {
 	if len(args) == 0 {
@@ -328,4 +324,3 @@ func handleSubscription(conn net.Conn, args []Value) {
 	fmt.Println("Client disconnected:", conn.RemoteAddr())
 	conn.Close() // Close connection when subscriber quits
 }
-

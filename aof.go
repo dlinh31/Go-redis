@@ -74,4 +74,3 @@ func (aof *Aof) Read(callback func(value Value)) error {
 	}
 	return nil
 }
-

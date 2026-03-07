@@ -1,0 +1,17 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - govet       # reports suspicious constructs
+    - errcheck    # checks for unchecked errors
+    - staticcheck # comprehensive static analysis
+    - gosimple    # suggests simplifications
+    - ineffassign # detects ineffectual assignments
+    - unused      # checks for unused code
+    - misspell    # catches common spelling mistakes
+    - gofmt       # enforces gofmt formatting
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

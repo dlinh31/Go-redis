@@ -8,11 +8,11 @@ import (
 )
 
 const (
-	STRING = '+'
-	ERROR = '-'
+	STRING  = '+'
+	ERROR   = '-'
 	INTEGER = ':'
-	BULK = '$'
-	ARRAY = '*'
+	BULK    = '$'
+	ARRAY   = '*'
 )
 
 type Value struct {
@@ -32,22 +32,22 @@ func NewResp(rd io.Reader) *Resp {
 }
 
 func (r *Resp) readLine() (line []byte, n int, err error) {
-	for { 
+	for {
 		b, err := r.reader.ReadByte()
 		if err != nil {
 			fmt.Println(err)
-			return nil, n, err 
+			return nil, n, err
 		}
 		n += 1
 		line = append(line, b)
-		if len(line) >= 2 && line[len(line) - 2] == '\r' {
+		if len(line) >= 2 && line[len(line)-2] == '\r' {
 			break
 		}
 	}
-	return line[:len(line) - 2], n, nil
+	return line[:len(line)-2], n, nil
 }
 
-func (r *Resp) readInteger() (x int, n int, err error){
+func (r *Resp) readInteger() (x int, n int, err error) {
 	line, n, err := r.readLine()
 	if err != nil {
 		return 0, 0, err
@@ -75,19 +75,18 @@ func (r *Resp) Read() (Value, error) {
 	}
 }
 
-
-func (r *Resp) readArray() (Value, error){
+func (r *Resp) readArray() (Value, error) {
 	v := Value{}
 	v.typ = "array"
 	length, _, err := r.readInteger() // length of arr
-	if err != nil{
+	if err != nil {
 		return v, err
 	}
 
 	v.array = make([]Value, length)
 	for i := 0; i < length; i++ {
 		val, err := r.Read()
-		if err != nil{
+		if err != nil {
 			return v, err
 		}
 		v.array[i] = val
@@ -139,7 +138,6 @@ func (v Value) marshalInteger() []byte {
 	return bytes
 }
 
-
 func (v Value) marshalString() []byte {
 	var bytes []byte
 	bytes = append(bytes, STRING)
@@ -147,7 +145,6 @@ func (v Value) marshalString() []byte {
 	bytes = append(bytes, '\r', '\n')
 	return bytes
 }
-
 
 func (v Value) marshalBulk() []byte {
 	var bytes []byte
@@ -203,6 +200,3 @@ func (w *Writer) Write(v Value) error {
 
 	return nil
 }
-
-
-
