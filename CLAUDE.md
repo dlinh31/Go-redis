@@ -18,12 +18,23 @@ go build -o go-redis .
 # Manual testing (requires redis-cli)
 redis-cli -p 6379
 
-# Docker
-docker build --platform linux/amd64 -t go-redis .
-docker-compose up
+# Docker (build and run via Compose)
+docker compose up --build       # build image and start
+docker compose up -d --build    # same, detached (background)
+docker compose down             # stop and remove container
+docker compose logs -f          # tail logs
 ```
 
 There are no test files in this codebase. Validation is done manually via `redis-cli`.
+
+## Docker
+
+Two files handle containerization:
+
+- **Dockerfile** — multi-stage build: Stage 1 compiles the binary using `golang:1.23-alpine`, Stage 2 copies only the binary into a minimal `alpine:3.21` image. `CGO_ENABLED=0` produces a fully static binary with no C dependencies.
+- **docker-compose.yml** — defines the single `go-redis` service: builds from the local Dockerfile, maps port `6379:6379`, mounts `./data:/app/data` so the AOF file persists across container restarts, and sets `restart: unless-stopped`.
+
+AOF persistence requires the volume mount — without it, `database.aof` is lost when the container stops.
 
 ## Architecture
 
